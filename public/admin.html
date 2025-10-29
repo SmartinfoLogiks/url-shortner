@@ -170,7 +170,7 @@ async function loadUrls(accountId){
   if(data.urls){
     data.urls.forEach(u=>{
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${u.shortId}</td><td>${u.alias}</td><td>${u.destination}</td><td>${u.total_clicks}</td><td>${u.last_click_at||''}</td><td><button class="btn btn-sm btn-outline-secondary">CSV</button></td>`;
+      tr.innerHTML = `<td><a href='${BASE_HOST}/${u.shortId}' target='_blank'>${u.shortId}</a></td><td>${u.alias}</td><td>${u.destination}</td><td>${u.total_clicks}</td><td>${u.last_click_at||''}</td><td><button class="btn btn-sm btn-outline-secondary">CSV</button></td>`;
       tr.querySelector('button').onclick = ()=>{
         window.open(`${BASE_HOST}/admin/urls/${u.shortId}/csv`,'_blank');
       };
