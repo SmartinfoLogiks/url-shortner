@@ -42,6 +42,8 @@ const pool = mysql.createPool({
   user: process.env.MYSQL_USER || 'root',
   password: process.env.MYSQL_PASSWORD || '',
   database: process.env.MYSQL_DB || 'urlshortener',
+  timezone: 'Z', // prevent auto-TZ offset
+  dateStrings: true, // return DATETIME as string instead of JS date
 });
 const query = (...args) => pool.query(...args);
 
