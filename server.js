@@ -160,7 +160,7 @@ async function ensureSampleAccount() {
     const accountId = res.insertId;
     const apiKey = 'demo_' + crypto.randomBytes(8).toString('hex');
     await query(`INSERT INTO api_keys (account_id, api_key, name) VALUES (?, ?, ?)`, [accountId, apiKey, 'default-key']);
-    console.log('⚙️  Created sample account');
+    console.log('Created sample account');
     console.log('    Account ID:', accountId);
     console.log('    Sample API Key:', apiKey);
   }
@@ -339,7 +339,12 @@ app.get('/api/generate', async (req, res) => {
     try {
       new URL(original);
     } catch (e) {
-      return res.status(400).json({ status: 'error', message: 'Invalid URL format' });
+      try {
+        new URL(decodeURIComponent(original));
+        original = decodeURIComponent(original);
+      } catch (e2) {
+        return res.status(400).json({ status: 'error', message: 'Invalid URL format' });
+      }
     }
 
     // expiry from account default
