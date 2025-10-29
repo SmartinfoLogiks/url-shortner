@@ -318,14 +318,14 @@ async function consumeTokenRedis(bucketKey, capacity, refillPerSec) {
 async function getAccountByApiKey(apiKey) {
   if (!apiKey) return null;
   const [rows] = await query(
-    `SELECT a.* FROM api_keys k JOIN accounts a ON k.account_id = a.id WHERE k.api_key = ? LIMIT 1`,
+    `SELECT a.*,k.* FROM api_keys k JOIN accounts a ON k.account_id = a.id WHERE k.api_key = ? LIMIT 1`,
     [apiKey]
   );
   return rows[0] || null;
 }
 
 // Create short url in MySQL
-async function createShortUrl(accountId, originalUrl, customName, expiryDays, onetimeUse) {
+async function createShortUrl(accountId, originalUrl, customName, expiryDays, onetimeUse, subpath) {
   let shortId = customName || generateShortId(7);
 
   // uniqueness checks
@@ -347,6 +347,10 @@ async function createShortUrl(accountId, originalUrl, customName, expiryDays, on
     const d = new Date();
     d.setDate(d.getDate() + Number(expiryDays));
     expiryAt = d.toISOString().slice(0, 19).replace('T', ' ');
+  }
+
+  if(subpath && subpath.length > 0){
+    shortId = `${subpath}/${shortId}`;
   }
 
   const [res] = await query(
@@ -412,76 +416,8 @@ async function ipBackoffGetRemaining(ip) {
   return ttl;
 }
 
-// -------------------- ROUTES --------------------
-
-// 1) API endpoint to create new short URL
-// GET /api/generate?key={{key}}&source={{source_url}}&userDomain=1&name={{name}}
-app.get('/api/generate', async (req, res) => {
+async function redirectToURI(shortId, req, res) {
   try {
-    const apiKey = req.query.key;
-    const original = req.query.source;
-    const name = req.query.name;
-    var userDomain = req.query.userDomain;
-    var onetimeUse = req.query.onetimeUse;
-    //noTitle
-    //tag
-
-    if (!apiKey) return res.status(401).json({ status: 'error', message: 'API key required (key)' });
-    if (!original) return res.status(400).json({ status: 'error', message: 'short (original URL) required' });
-    if (typeof userDomain === 'undefined') userDomain = 0;
-    if (typeof onetimeUse === 'undefined') onetimeUse = 0;
-
-    // strict API key validation
-    const account = await getAccountByApiKey(apiKey);
-    if (!account) return res.status(401).json({ status: 'error', message: 'Invalid API key' });
-
-    // basic URL format validation
-    try {
-      new URL(original);
-    } catch (e) {
-      try {
-        new URL(decodeURIComponent(original));
-        original = decodeURIComponent(original);
-      } catch (e2) {
-        return res.status(400).json({ status: 'error', message: 'Invalid URL format' });
-      }
-    }
-
-    // expiry from account default
-    const expiryDays = account.default_expiry_days || null;
-
-    // create short URL
-    let created;
-    try {
-      created = await createShortUrl(account.id, original, name, expiryDays, onetimeUse);
-    } catch (e) {
-      if (e.message === 'alias_taken') {
-        return res.status(409).json({ status: 'error', message: 'Custom alias already taken' });
-      }
-      console.error('createShortUrl error', e);
-      return res.status(500).json({ status: 'error', message: 'Failed to create short url' });
-    }
-
-    const shortUrl = `${BASE_HOST}/${created.shortId}`;
-    return res.json({
-      status: 'ok',
-      shortUrl,
-      originalUrl: created.originalUrl,
-      shortId: created.shortId,
-      expiryAt: created.expiryAt
-    });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ status: 'error', message: 'Internal server error' });
-  }
-});
-
-// 2) Redirect route with Redis token-bucket enforcement & IP backoff
-app.get('/:shortId', async (req, res) => {
-  try {
-    const shortId = req.params.shortId;
-    if (!shortId) return res.status(400).send('Bad request');
-
     // find url + account limits
     const [rows] = await query(`SELECT u.*, a.account_max_clicks_per_day, a.url_max_clicks_per_day, u.onetime_use FROM urls u JOIN accounts a ON u.account_id = a.id WHERE u.shortId = ? AND deleted = 0 LIMIT 1`, [shortId]);
     if (!rows || rows.length === 0) return res.status(404).send('Not found');
@@ -550,6 +486,70 @@ app.get('/:shortId', async (req, res) => {
   } catch (err) {
     console.error('redirect error', err);
     return res.status(500).send('Internal server error');
+  }
+}
+
+// -------------------- ROUTES --------------------
+
+// 1) API endpoint to create new short URL
+// GET /api/generate?key={{key}}&source={{source_url}}&userDomain=1&name={{name}}
+app.get('/api/generate', async (req, res) => {
+  try {
+    const apiKey = req.query.key;
+    const original = req.query.source;
+    const name = req.query.name;
+    var userDomain = req.query.userDomain;
+    var onetimeUse = req.query.onetimeUse;
+    //noTitle
+    //tag
+
+    if (!apiKey) return res.status(401).json({ status: 'error', message: 'API key required (key)' });
+    if (!original) return res.status(400).json({ status: 'error', message: 'short (original URL) required' });
+    if (typeof userDomain === 'undefined') userDomain = 0;
+    if (typeof onetimeUse === 'undefined') onetimeUse = 0;
+
+    // strict API key validation
+    const account = await getAccountByApiKey(apiKey);
+    if (!account) return res.status(401).json({ status: 'error', message: 'Invalid API key' });
+
+    // basic URL format validation
+    try {
+      new URL(original);
+    } catch (e) {
+      try {
+        new URL(decodeURIComponent(original));
+        original = decodeURIComponent(original);
+      } catch (e2) {
+        return res.status(400).json({ status: 'error', message: 'Invalid URL format' });
+      }
+    }
+
+    // expiry from account default
+    const expiryDays = account.default_expiry_days || null;
+
+    // create short URL
+    let created;
+    try {
+      created = await createShortUrl(account.id, original, name, expiryDays, onetimeUse, account.subpath);
+    } catch (e) {
+      if (e.message === 'alias_taken') {
+        return res.status(409).json({ status: 'error', message: 'Custom alias already taken' });
+      }
+      console.error('createShortUrl error', e);
+      return res.status(500).json({ status: 'error', message: 'Failed to create short url' });
+    }
+
+    const shortUrl = `${BASE_HOST}/${created.shortId}`;
+    return res.json({
+      status: 'ok',
+      shortUrl,
+      originalUrl: created.originalUrl,
+      shortId: created.shortId,
+      expiryAt: created.expiryAt
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ status: 'error', message: 'Internal server error' });
   }
 });
 
@@ -738,6 +738,26 @@ app.get("/admin/urls/:shortid/csv", async (req, res) => {
     console.error("Error /admin/urls/:alias/csv:", err);
     res.status(500).json({ status: "error", message: "server_error" });
   }
+});
+
+// 2) Redirect route with Redis token-bucket enforcement & IP backoff
+app.get('/:subpath/:shortId', async (req, res) => {
+  const shortId_1 = req.params.subpath;
+  if (!shortId_1) return res.status(400).send('Bad request');
+
+  const shortId_2 = req.params.shortId;
+  if (!shortId_2) return res.status(400).send('Bad request');
+
+  const shortId = `${shortId_1}/${shortId_2}`;
+
+  redirectToURI(shortId, req, res);
+});
+
+app.get('/:shortId', async (req, res) => {
+  const shortId = req.params.shortId;
+  if (!shortId) return res.status(400).send('Bad request');
+
+  redirectToURI(shortId, req, res);
 });
 
 // -------------------- STARTUP --------------------
