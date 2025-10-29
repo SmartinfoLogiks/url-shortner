@@ -498,14 +498,14 @@ app.get('/api/generate', async (req, res) => {
     const apiKey = req.query.key;
     const original = req.query.source;
     const name = req.query.name;
-    var userDomain = req.query.userDomain;
+    var useHeader = req.query.useHeader;
     var onetimeUse = req.query.onetimeUse;
     //noTitle
     //tag
 
     if (!apiKey) return res.status(401).json({ status: 'error', message: 'API key required (key)' });
     if (!original) return res.status(400).json({ status: 'error', message: 'short (original URL) required' });
-    if (typeof userDomain === 'undefined') userDomain = 0;
+    if (typeof useHeader === 'undefined') useHeader = 0;
     if (typeof onetimeUse === 'undefined') onetimeUse = 0;
 
     // strict API key validation
@@ -530,7 +530,7 @@ app.get('/api/generate', async (req, res) => {
     // create short URL
     let created;
     try {
-      created = await createShortUrl(account.id, original, name, expiryDays, onetimeUse, account.subpath);
+      created = await createShortUrl(account.id, original, name, expiryDays, onetimeUse, useHeader?account.subpath:null);
     } catch (e) {
       if (e.message === 'alias_taken') {
         return res.status(409).json({ status: 'error', message: 'Custom alias already taken' });

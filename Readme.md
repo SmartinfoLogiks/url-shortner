@@ -81,20 +81,21 @@ http://localhost:3000
 ### Endpoint Format
 
 ```
-GET /api/generate?key={key}&source={longUrl}&userDomain=1&name={customAlias}
+GET /api/generate?key={key}&source={longUrl}&useHeader=1&name={customAlias}
 ```
 
 | Param        | Description                                  | Required |
 | ------------ | -------------------------------------------- | -------- |
 | `key`        | API key (depending on config)                | ✅        |
 | `source`     | The original long URL to be shortened        | ✅        |
-| `userDomain` | Static param for API compatibility (use `1`) | ✅        |
+| `useHeader`  | Static param for API compatibility (use `1`) | ❌        |
 | `name`       | Custom short alias (e.g. "my-link")          | ❌        |
+| `onetimeUse` | Allows generating one time use links         | ❌        |
 
 ### Example Request
 
 ```
-http://localhost:3000/api/generate?key=12345&source=https://example.com&userDomain=1&name=myalias
+http://localhost:3000/api/generate?key=12345&source=https://example.com&useHeader=1&name=myalias
 ```
 
 ### Example Response

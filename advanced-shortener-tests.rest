@@ -39,11 +39,11 @@ Content-Type: application/json
 
 ###
 # 3) Create short link with custom alias
-GET http://localhost:3000/api/generate?key={{API_KEY}}&source=https://example.com&userDomain=1&name=advtest
+GET http://localhost:3000/api/generate?key={{API_KEY}}&source=https://example.com&useHeader=1&name=advtest
 
 ###
 # 4) Create RANDOM alias short link
-GET http://localhost:3000/api/generate?key={{API_KEY}}&source=https://github.com&userDomain=1
+GET http://localhost:3000/api/generate?key={{API_KEY}}&source=https://github.com&useHeader=1
 
 
 
@@ -67,7 +67,7 @@ Content-Type: application/json
 ###
 # 8) Create short link that expires today
 # Using new account's API key (must create new key first)
-GET http://localhost:3000/api/generate?key={{EXPIRE_TEST_API_KEY}}&short=https://wikipedia.org&userDomain=1&name=expireme
+GET http://localhost:3000/api/generate?key={{EXPIRE_TEST_API_KEY}}&short=https://wikipedia.org&useHeader=1&name=expireme
 
 
 ###
@@ -92,7 +92,7 @@ GET http://localhost:3000/advtest
 
 ###
 # 12) Create a SECOND short link under same account
-GET http://localhost:3000/api/generate?key={{API_KEY}}&short=https://nodejs.org&userDomain=1&name=another
+GET http://localhost:3000/api/generate?key={{API_KEY}}&short=https://nodejs.org&useHeader=1&name=another
 
 
 ###
