@@ -88,6 +88,8 @@ document.getElementById('nextPage').onclick = () => { if(currentPage<totalPages)
 
 document.getElementById('filterRange').onchange = () => { currentPage = 1; if(currentAccount) loadUrls(currentAccount.id); };
 
+document.getElementById('adminKey').value = (localStorage.getItem("ADMINKEY")?localStorage.getItem("ADMINKEY"):"")
+
 function showNotice(msg){
   noticeBox.textContent = msg;
   noticeBox.classList.remove('d-none');
@@ -96,6 +98,8 @@ function showNotice(msg){
 
 async function loadAccounts(){
   const adminKey = adminKeyInput.value;
+  localStorage.setItem("ADMINKEY", adminKey);
+  
   const res = await fetch(`${BASE_HOST}/admin/accounts`, { headers: { 'X-ADMIN-KEY': adminKey }});
   const data = await res.json();
   const tbody = document.querySelector('#accountsTable tbody');
