@@ -153,7 +153,7 @@ async function initDb() {
 async function ensureSampleAccount() {
   const [rows] = await query(`SELECT id FROM accounts LIMIT 1`);
   if (rows.length === 0) {
-    const res = await query(
+    const [res] = await query(
       `INSERT INTO accounts (name) VALUES (?)`,
       ['default-account']
     );
