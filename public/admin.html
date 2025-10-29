@@ -126,17 +126,29 @@ function getFilterDates(){
   const val = document.getElementById('filterRange').value;
   const now = new Date();
   let from=null, to=null;
+
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
+
   switch(val){
     case 'today':
-      from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      from.setMinutes(from.getMinutes() - from.getTimezoneOffset())
+
+      from = from.toISOString();
       to = now.toISOString();
       break;
     case '7d':
-      from = new Date(now.getTime()-7*24*3600*1000).toISOString();
+      from = new Date(now.getTime()-7*24*3600*1000);
+      from.setMinutes(from.getMinutes() - from.getTimezoneOffset())
+
+      from = from.toISOString();
       to = now.toISOString();
       break;
     case '30d':
-      from = new Date(now.getTime()-30*24*3600*1000).toISOString();
+      from = new Date(now.getTime()-30*24*3600*1000);
+      from.setMinutes(from.getMinutes() - from.getTimezoneOffset())
+      
+      from = from.toISOString();
       to = now.toISOString();
       break;
     case 'all': from = null; to = null; break;
