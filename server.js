@@ -19,6 +19,8 @@ const _ = require('lodash');
 const util = require('util');
 const crypto = require('crypto');
 const path = require("path");
+const { Reader } = require("@maxmind/geoip2-node");
+let geoReader = null;
 
 require('dotenv').config();
 
@@ -134,13 +136,18 @@ async function initDb() {
   `);
 
   await query(`
-    CREATE TABLE IF NOT EXISTS clicks (
+    CREATE TABLE IF NOT EXISTS url_clicks (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
       account_id INT NOT NULL,
       url_id INT NOT NULL,
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       ip VARCHAR(64),
       user_agent VARCHAR(512),
+      country VARCHAR(4) DEFAULT '',
+      region VARCHAR(128) DEFAULT '',
+      city VARCHAR(128) DEFAULT '',
+      latitude DECIMAL(10,6) DEFAULT '',
+      longitude DECIMAL(10,6) DEFAULT '',
       referer TEXT,
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
       FOREIGN KEY (url_id) REFERENCES urls(id) ON DELETE CASCADE,
@@ -166,6 +173,17 @@ async function ensureSampleAccount() {
   }
 }
 
+// Helper to initialize GeoIP DB (call on startup)
+async function initGeoIP(dbPath = process.env.GEOLITE_DB_PATH || './geo/GeoLite2-City.mmdb') {
+  try {
+    geoReader = await Reader.open(dbPath);
+    console.log('GeoIP DB loaded:', dbPath);
+  } catch (e) {
+    geoReader = null;
+    console.warn('Could not load GeoIP DB:', dbPath, e.message || e);
+  }
+}
+
 // -------------------- UTIL --------------------
 function generateShortId(length = 7) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -177,6 +195,7 @@ function randKey(len = 24) {
 }
 
 function getClientIp(req) {
+  //const ip = (req.headers["x-forwarded-for"]?.split(",")[0] || req.ip || "").trim();
   const xf = req.headers['x-forwarded-for'];
   if (xf) return xf.split(',')[0].trim();
   return (req.ip || (req.socket && req.socket.remoteAddress)) || 'unknown';
@@ -184,6 +203,70 @@ function getClientIp(req) {
 
 function nowSec() {
   return Math.floor(Date.now() / 1000);
+}
+
+// Redis geo cache key helper (namespaced v1)
+function geoCacheKey(ip) {
+  return `geo:v1:${ip}`;
+}
+
+/**
+ * lookupGeoForIp(ip)
+ * - checks Redis cache first
+ * - if missing, queries MaxMind (geoReader.city) and caches the result (JSON)
+ * - returns object: { country, region, city, latitude, longitude }
+ * - returns null if lookup not possible
+ */
+async function lookupGeoForIp(ip) {
+  if (!ip) return null;
+
+  // check redis cache
+  try {
+    const key = geoCacheKey(ip);
+    const cached = await redis.get(key);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    console.warn('Redis geo cache error (get):', e && e.message);
+    // continue to lookup
+  }
+
+  // if no geoReader or ip is local/private, return null
+  if (!geoReader) return null;
+
+  try {
+    // perform lookup (city-level)
+    const res = geoReader.city(ip);
+
+    const country = res?.country?.isoCode || null;
+    const region = res?.mostSpecificSubdivision?.names?.en || null;
+    const city = res?.city?.names?.en || null;
+    const latitude = (res?.location && typeof res.location.latitude === 'number') ? Number(res.location.latitude) : null;
+    const longitude = (res?.location && typeof res.location.longitude === 'number') ? Number(res.location.longitude) : null;
+
+    const out = {
+      country: country || null,
+      region: region || null,
+      city: city || null,
+      latitude,
+      longitude
+    };
+
+    // cache in Redis (no TTL)
+    try {
+      await redis.set(geoCacheKey(ip), JSON.stringify(out));
+    } catch (e) {
+      console.warn('Redis geo cache error (set):', e && e.message);
+    }
+
+    return out;
+  } catch (e) {
+    // lookup may throw for local/private IPs or invalid addresses
+    // we swallow and return null
+    // console.warn('GeoIP lookup error for', ip, e && e.message);
+    return null;
+  }
 }
 
 // -------------------- REDIS TOKEN BUCKET --------------------
@@ -274,9 +357,24 @@ async function createShortUrl(accountId, originalUrl, customName, expiryDays, on
 }
 
 async function recordClick(accountId, urlId, ip, ua, referer) {
+  let geo = null;
+  try {
+    geo = await lookupGeoForIp(ip);
+  } catch (e) {
+    geo = null;
+  }
+
+  // If no geo -> store "UNKNOWN" strings per your choice; lat/lon remain null
+  const country = geo && geo.country ? geo.country : '-';
+  const region = geo && geo.region ? geo.region : '-';
+  const city = geo && geo.city ? geo.city : '-';
+  const latitude = geo && (typeof geo.latitude === 'number') ? geo.latitude : 0;
+  const longitude = geo && (typeof geo.longitude === 'number') ? geo.longitude : 0;
+
+  // console.log(ip, country,region,city,latitude,longitude);
   await query(
-    `INSERT INTO clicks (account_id, url_id, ip, user_agent, referer) VALUES (?, ?, ?, ?, ?)`,
-    [accountId, urlId, ip || null, ua || null, referer || null]
+    `INSERT INTO url_clicks (account_id, url_id, ip, user_agent, referer, country,region,city,latitude,longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [accountId, urlId, ip || null, ua || null, referer || null, country,region,city,latitude,longitude]
   );
   await query(`UPDATE urls SET clickCount = clickCount + 1 WHERE id = ?`, [urlId]);
 }
@@ -541,43 +639,101 @@ app.delete('/admin/accounts/:id', adminAuth, async (req, res) => {
   }
 });
 
-// GET /admin/urls?account=123
-app.get("/admin/urls", async (req, res) => {
+// UPDATED /admin/urls (with pagination + filters)
+app.get("/admin/urls", adminAuth, async (req, res) => {
   try {
-    const adminKey = req.header("X-ADMIN-KEY");
     const accountId = req.query.account;
+    if (!accountId) return res.status(400).json({ status: "error", message: "missing_account_id" });
 
-    // Validate admin auth
-    if (!adminKey || adminKey !== process.env.ADMIN_KEY) {
-      return res.status(403).json({ status: "error", message: "invalid_admin_key" });
+    const page = parseInt(req.query.page || "1", 10);
+    const limit = parseInt(req.query.limit || "25", 10);
+    const offset = (page - 1) * limit;
+
+    const from = req.query.from || null;
+    const to = req.query.to || null;
+
+    // dynamic filter for time-range
+    let timeFilter = "";
+    const params = [];
+
+    if (from) {
+      timeFilter += " AND c.createdAt >= ?";
+      params.push(from);
     }
-
-    if (!accountId) {
-      return res.status(400).json({ status: "error", message: "missing_account_id" });
+    if (to) {
+      timeFilter += " AND c.createdAt <= ?";
+      params.push(to);
     }
+    params.push(accountId);
 
-    // Fetch URLs + aggregated analytics
-    const [rows] = await query(
+    // fetch paginated results
+    const [urls] = await query(
       `
       SELECT 
         u.id,
         u.customName as alias,
-        u.shortId as shortid,
         u.originalUrl as destination,
+        u.shortId,
         COUNT(c.id) AS total_clicks,
         MAX(c.createdAt) AS last_click_at
       FROM urls u
-      LEFT JOIN clicks c ON c.url_id = u.id
+      LEFT JOIN url_clicks c
+        ON c.url_id = u.id
+        ${timeFilter}
       WHERE u.account_id = ?
       GROUP BY u.id
-      ORDER BY u.id DESC;
+      ORDER BY u.id DESC
+      LIMIT ? OFFSET ?
+      `,
+      [...params, limit, offset]
+    );
+
+    // fetch total count for pagination
+    const [[countRow]] = await query(
+      `
+      SELECT COUNT(*) AS total
+      FROM urls
+      WHERE account_id = ?
       `,
       [accountId]
     );
 
-    res.json({ status: "ok", urls: rows });
+    res.json({
+      status: "ok",
+      page,
+      limit,
+      total: countRow.total,
+      urls
+    });
   } catch (err) {
-    console.error("Error in /admin/urls:", err);
+    console.error("Error /admin/urls:", err);
+    res.status(500).json({ status: "error", message: "server_error" });
+  }
+});
+
+// CSV export for a single URL
+app.get("/admin/urls/:shortid/csv", async (req, res) => {
+  try {
+    const shortid = req.params.shortid;
+    const [[url]] = await query(
+      `SELECT id, customName, shortId FROM urls WHERE shortid = ? LIMIT 1`,
+      [shortid]
+    );
+    if (!url) return res.status(404).json({ status: "error", message: "not_found" });
+
+    const [clicks] = await query(
+      `SELECT * FROM url_clicks WHERE url_id = ? ORDER BY createdAt DESC`,
+      [url.id]
+    );
+
+    const alias = url.customName || url.shortId || `url_${url.id}`;
+    let csv = "createdAt,ip,country,region,city,latitude,longitude\n" + clicks.map(c => `${c.createdAt},${c.ip},${c.country},${c.region},${c.city},${c.latitude},${c.longitude}`).join("\n");
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename=\"${alias}.csv\"`);
+    res.send(csv);
+  } catch (err) {
+    console.error("Error /admin/urls/:alias/csv:", err);
     res.status(500).json({ status: "error", message: "server_error" });
   }
 });
@@ -588,6 +744,9 @@ app.get("/admin/urls", async (req, res) => {
     await redis.connect();
     console.log('Redis connected');
     await loadTokenBucketScript();
+
+    // load geo ip db
+    await initGeoIP(process.env.GEOLITE_DB_PATH || './geo/GeoLite2-City.mmdb');
 
     await initDb();
     await ensureSampleAccount();

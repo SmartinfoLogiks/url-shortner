@@ -39,11 +39,11 @@ Content-Type: application/json
 
 ###
 # 3) Create short link with custom alias
-GET http://localhost:3000/api/generate?key={{API_KEY}}&short=https://example.com&userDomain=1&name=advtest
+GET http://localhost:3000/api/generate?key={{API_KEY}}&source=https://example.com&userDomain=1&name=advtest
 
 ###
 # 4) Create RANDOM alias short link
-GET http://localhost:3000/api/generate?key={{API_KEY}}&short=https://github.com&userDomain=1
+GET http://localhost:3000/api/generate?key={{API_KEY}}&source=https://github.com&userDomain=1
 
 
 

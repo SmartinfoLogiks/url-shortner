@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>URL Shortener Admin Dashboard</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URL Shortener Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
   <div class="container py-4">
-    <h1 class="mb-4">URL Shortener Admin Dashboard</h1>
+    <h1 class="mb-4">URL Shortener Dashboard</h1>
 
+    <!-- Admin Key Input -->
     <div class="card mb-4">
       <div class="card-body d-flex gap-3 align-items-end">
         <div class="flex-grow-1">
@@ -20,6 +21,7 @@
       </div>
     </div>
 
+    <!-- Accounts -->
     <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <strong>Accounts</strong>
@@ -33,16 +35,36 @@
       </div>
     </div>
 
+    <!-- URLs -->
     <div class="card mb-4" id="urlsCard" style="display:none;">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>URLs for Account <span id="selectedAccountName"></span></strong>
-        <button id="btnRefreshUrls" class="btn btn-sm btn-outline-secondary">Refresh</button>
+        <div>
+          <strong>URLs for Account <span id="selectedAccountName"></span></strong>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+          <select id="filterRange" class="form-select form-select-sm">
+            <option value="today" selected>Today</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="all">All Time</option>
+          </select>
+          <button id="btnRefreshUrls" class="btn btn-sm btn-outline-secondary">Refresh</button>
+        </div>
       </div>
       <div class="card-body p-0">
         <table class="table table-striped mb-0" id="urlsTable">
-          <thead><tr><th>Alias</th><th>ShortID</th><th>Destination</th><th>Total Clicks</th><th>Last Click</th></tr></thead>
+          <thead><tr><th>ShortID</th><th>Alias</th><th>Destination</th><th>Total Clicks</th><th>Last Click</th><th>CSV</th></tr></thead>
           <tbody></tbody>
         </table>
+      </div>
+      <div class="card-footer d-flex justify-content-between align-items-center">
+        <div>
+          <button id="prevPage" class="btn btn-sm btn-outline-primary">« Prev</button>
+          <button id="nextPage" class="btn btn-sm btn-outline-primary">Next »</button>
+        </div>
+        <div>
+          Page <span id="currentPage">1</span> of <span id="totalPages">1</span>
+        </div>
       </div>
     </div>
 
@@ -50,72 +72,112 @@
   </div>
 
 <script>
-  const BASE_HOST = window.location.origin;
-  const adminKeyInput = document.getElementById('adminKey');
-  const noticeBox = document.getElementById('notice');
-  document.getElementById('btnLoadAccounts').onclick = loadAccounts;
-  document.getElementById('btnCreateAccount').onclick = createAccount;
-  document.getElementById('btnRefreshUrls').onclick = () => loadUrls(currentAccount.id);
+const BASE_HOST = window.location.origin;
+let currentAccount = null;
+let currentPage = 1;
+let totalPages = 1;
 
-  let currentAccount = null;
+const adminKeyInput = document.getElementById('adminKey');
+const noticeBox = document.getElementById('notice');
 
-  function showNotice(msg) {
-    noticeBox.textContent = msg;
-    noticeBox.classList.remove('d-none');
-    setTimeout(()=> noticeBox.classList.add('d-none'), 3000);
-  }
+document.getElementById('btnLoadAccounts').onclick = loadAccounts;
+document.getElementById('btnCreateAccount').onclick = createAccount;
+document.getElementById('btnRefreshUrls').onclick = () => loadUrls(currentAccount.id);
+document.getElementById('prevPage').onclick = () => { if(currentPage>1){currentPage--; loadUrls(currentAccount.id);}};
+document.getElementById('nextPage').onclick = () => { if(currentPage<totalPages){currentPage++; loadUrls(currentAccount.id);}};
 
-  async function loadAccounts() {
-    const adminKey = adminKeyInput.value;
-    const res = await fetch(`${BASE_HOST}/admin/accounts`, { headers: { 'X-ADMIN-KEY': adminKey }});
-    const data = await res.json();
-    const tbody = document.querySelector('#accountsTable tbody');
-    tbody.innerHTML = '';
-    if (data.accounts) {
-      data.accounts.forEach(a => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${a.id}</td><td>${a.name}</td><td><button class="btn btn-sm btn-outline-primary">View URLs</button></td>`;
-        tr.querySelector('button').onclick = () => selectAccount(a);
-        tbody.appendChild(tr);
-      });
-    } else showNotice('Failed to load accounts');
-  }
+document.getElementById('filterRange').onchange = () => { currentPage = 1; if(currentAccount) loadUrls(currentAccount.id); };
 
-  function selectAccount(account) {
-    currentAccount = account;
-    document.getElementById('selectedAccountName').textContent = `${account.name} (#${account.id})`;
-    document.getElementById('urlsCard').style.display = 'block';
-    loadUrls(account.id);
-  }
+function showNotice(msg){
+  noticeBox.textContent = msg;
+  noticeBox.classList.remove('d-none');
+  setTimeout(()=> noticeBox.classList.add('d-none'),3000);
+}
 
-  async function loadUrls(accountId) {
-    const adminKey = adminKeyInput.value;
-    const res = await fetch(`${BASE_HOST}/admin/urls?account=${accountId}`, { headers: { 'X-ADMIN-KEY': adminKey }});
-    const data = await res.json();
-    const tbody = document.querySelector('#urlsTable tbody');
-    tbody.innerHTML = '';
-    if (data.urls) {
-      data.urls.forEach(u => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${u.alias}</td><td>${u.shortid}</td><td>${u.destination}</td><td>${u.total_clicks}</td><td>${u.last_click_at || ''}</td>`;
-        tbody.appendChild(tr);
-      });
-    }
-  }
-
-  async function createAccount() {
-    const name = prompt('Account name?');
-    if (!name) return;
-    const adminKey = adminKeyInput.value;
-    const res = await fetch(`${BASE_HOST}/admin/accounts`, {
-      method: 'POST',
-      headers: { 'X-ADMIN-KEY': adminKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name })
+async function loadAccounts(){
+  const adminKey = adminKeyInput.value;
+  const res = await fetch(`${BASE_HOST}/admin/accounts`, { headers: { 'X-ADMIN-KEY': adminKey }});
+  const data = await res.json();
+  const tbody = document.querySelector('#accountsTable tbody');
+  tbody.innerHTML = '';
+  if(data.accounts){
+    data.accounts.forEach(a=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${a.id}</td><td>${a.name}</td><td><button class="btn btn-sm btn-outline-primary">View URLs</button></td>`;
+      tr.querySelector('button').onclick = () => selectAccount(a);
+      tbody.appendChild(tr);
     });
-    const data = await res.json();
-    if (data.accountId) { showNotice('Account created'); loadAccounts(); }
-    else showNotice('Failed to create');
+  }else showNotice('Failed to load accounts');
+}
+
+function selectAccount(account){
+  currentAccount = account;
+  document.getElementById('selectedAccountName').textContent = `${account.name} (#${account.id})`;
+  document.getElementById('urlsCard').style.display = 'block';
+  currentPage = 1;
+  loadUrls(account.id);
+}
+
+function getFilterDates(){
+  const val = document.getElementById('filterRange').value;
+  const now = new Date();
+  let from=null, to=null;
+  switch(val){
+    case 'today':
+      from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      to = now.toISOString();
+      break;
+    case '7d':
+      from = new Date(now.getTime()-7*24*3600*1000).toISOString();
+      to = now.toISOString();
+      break;
+    case '30d':
+      from = new Date(now.getTime()-30*24*3600*1000).toISOString();
+      to = now.toISOString();
+      break;
+    case 'all': from = null; to = null; break;
   }
+  return {from, to};
+}
+
+async function loadUrls(accountId){
+  const adminKey = adminKeyInput.value;
+  const {from,to} = getFilterDates();
+  const params = new URLSearchParams({account:accountId,page:currentPage,limit:10});
+  if(from) params.append('from', from);
+  if(to) params.append('to', to);
+
+  const res = await fetch(`${BASE_HOST}/admin/urls?${params.toString()}`, { headers: { 'X-ADMIN-KEY': adminKey }});
+  const data = await res.json();
+  const tbody = document.querySelector('#urlsTable tbody');
+  tbody.innerHTML = '';
+  if(data.urls){
+    data.urls.forEach(u=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${u.shortId}</td><td>${u.alias}</td><td>${u.destination}</td><td>${u.total_clicks}</td><td>${u.last_click_at||''}</td><td><button class="btn btn-sm btn-outline-secondary">CSV</button></td>`;
+      tr.querySelector('button').onclick = ()=>{
+        window.open(`${BASE_HOST}/admin/urls/${u.shortId}/csv`,'_blank');
+      };
+      tbody.appendChild(tr);
+    });
+    currentPage = data.page; totalPages = Math.ceil(data.total/data.limit);
+    document.getElementById('currentPage').textContent = currentPage;
+    document.getElementById('totalPages').textContent = totalPages;
+  }
+}
+
+async function createAccount(){
+  const name = prompt('Account name?');
+  if(!name) return;
+  const adminKey = adminKeyInput.value;
+  const res = await fetch(`${BASE_HOST}/admin/accounts`,{
+    method:'POST', headers:{'X-ADMIN-KEY':adminKey,'Content-Type':'application/json'},
+    body: JSON.stringify({name})
+  });
+  const data = await res.json();
+  if(data.accountId){ showNotice('Account created'); loadAccounts(); }
+  else showNotice('Failed to create');
+}
 </script>
 </body>
 </html>

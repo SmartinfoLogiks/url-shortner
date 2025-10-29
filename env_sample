@@ -25,3 +25,6 @@ DEFAULT_EXPIRY_DAYS=3650
 # Token bucket settings
 # (these are multipliers/precision -- typically you won't change these)
 TOKEN_BUCKET_PRECISION=1000
+
+# GeoIP Database Path (leave empty to disable geoip logging)
+GEOLITE_DB_PATH=./geo/GeoLite2-City.mmdb
