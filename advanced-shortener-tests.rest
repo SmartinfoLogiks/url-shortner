@@ -1,0 +1,129 @@
+###
+# 0) PREP – Admin: list current accounts
+GET http://localhost:3000/admin/accounts
+X-ADMIN-KEY: supersecretadminkey
+
+###
+# 1) Admin: create new account for these tests
+POST http://localhost:3000/admin/accounts
+X-ADMIN-KEY: supersecretadminkey
+Content-Type: application/json
+
+{
+  "name": "test01",
+  "default_expiry_days": 2,
+  "account_max_clicks_per_day": 20,
+  "url_max_clicks_per_day": 5
+}
+
+
+### ERROR
+# 2) Admin: LIST API key for this account
+GET http://localhost:3000/admin/api-keys
+X-ADMIN-KEY: supersecretadminkey
+Content-Type: application/json
+
+###
+# 2) Admin: create API key for this account
+POST http://localhost:3000/admin/api-keys
+X-ADMIN-KEY: supersecretadminkey
+Content-Type: application/json
+
+{
+  "accountId": 1,
+  "name": "advanced-key"
+}
+
+@API_KEY = f5c3d815ecab18c0b5fcf9512a14e750aadcbf39
+@SHORTID = FkwLWrt
+
+###
+# 3) Create short link with custom alias
+GET http://localhost:3000/api/generate?key={{API_KEY}}&short=https://example.com&userDomain=1&name=advtest
+
+###
+# 4) Create RANDOM alias short link
+GET http://localhost:3000/api/generate?key={{API_KEY}}&short=https://github.com&userDomain=1
+
+
+
+###
+# 5) Visit the custom short link
+GET http://localhost:3000/{{SHORTID}}
+
+
+###
+# 7) Admin create ultra-short expiry test account
+POST http://localhost:3000/admin/accounts
+X-ADMIN-KEY: supersecretadminkey
+Content-Type: application/json
+
+{
+  "name": "expire-test-account",
+  "default_expiry_days": 0  // expires immediately (same-day)
+}
+
+
+###
+# 8) Create short link that expires today
+# Using new account's API key (must create new key first)
+GET http://localhost:3000/api/generate?key={{EXPIRE_TEST_API_KEY}}&short=https://wikipedia.org&userDomain=1&name=expireme
+
+
+###
+# 9) Attempt redirect (should 404 if day changed)
+GET http://localhost:3000/expireme
+
+
+###
+# 10) Burst-click same short link to hit per-URL limit
+GET http://localhost:3000/advtest
+GET http://localhost:3000/advtest
+GET http://localhost:3000/advtest
+GET http://localhost:3000/advtest
+GET http://localhost:3000/advtest
+GET http://localhost:3000/advtest
+
+
+###
+# 11) Repeatedly hitting causes exponential IP backoff
+GET http://localhost:3000/advtest
+
+
+###
+# 12) Create a SECOND short link under same account
+GET http://localhost:3000/api/generate?key={{API_KEY}}&short=https://nodejs.org&userDomain=1&name=another
+
+
+###
+# 13) Hit that new one quickly (URL bucket resets but account bucket shared)
+GET http://localhost:3000/another
+GET http://localhost:3000/another
+GET http://localhost:3000/another
+GET http://localhost:3000/another
+GET http://localhost:3000/another
+GET http://localhost:3000/another  # should 429 as account daily limit reached
+
+
+
+###
+# 14) Validate clicks table manually by checking redirect counts
+# (This isn't a direct endpoint yet — check in DB or ask analytics endpoint if implemented)
+# For now we add placeholder GET for possible future endpoint
+GET http://localhost:3000/admin/urls?account=1
+X-ADMIN-KEY: supersecretadminkey
+
+
+###
+# 15) Delete API key
+DELETE http://localhost:3000/admin/api-keys/{{API_KEY}}
+X-ADMIN-KEY: supersecretadminkey
+
+
+###
+# 16) Delete account (cascades urls + clicks)
+DELETE http://localhost:3000/admin/accounts/{{ACCOUNT_ID}}
+X-ADMIN-KEY: supersecretadminkey
+
+
+

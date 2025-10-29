@@ -1,0 +1,27 @@
+# .env.example - copy to .env and edit
+PORT=3000
+BASE_HOST=http://localhost:3000
+
+# MySQL
+MYSQL_HOST=localhost
+MYSQL_USER=root
+MYSQL_PASSWORD=
+MYSQL_DB=urlshortener
+MYSQL_CONN_LIMIT=10
+
+# Redis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# Admin secret to protect admin endpoints (create/delete api keys)
+ADMIN_KEY=supersecretadminkey
+
+# Defaults for accounts (used when creating sample account)
+DEFAULT_ACCOUNT_MAX_CLICKS_PER_DAY=10000
+DEFAULT_URL_MAX_CLICKS_PER_DAY=1000
+DEFAULT_EXPIRY_DAYS=3650
+
+# Token bucket settings
+# (these are multipliers/precision -- typically you won't change these)
+TOKEN_BUCKET_PRECISION=1000
