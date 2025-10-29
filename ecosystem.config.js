@@ -1,7 +1,7 @@
 module.exports = {
   apps : [{
     name: 'URL-Shortener',
-    script: 'index.js',
+    script: 'server.js',
     instances : 1,
     exec_mode : "cluster",
     env: {
